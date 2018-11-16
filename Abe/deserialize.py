@@ -39,6 +39,8 @@ def parse_setting(setting, vds):
   return 'unknown setting'
 
 def parse_TxIn(vds):
+  """Parse a Transaction Input in the human-readable format and store its contents in a python dict{k:v}.
+  Naming Conventions:  $TxIn -> Transaction Input."""
   d = {}
   d['prevout_hash'] = vds.read_bytes(32)
   d['prevout_n'] = vds.read_uint32()
