@@ -13,16 +13,17 @@ import struct
 
 def parse_CAddress(vds):
   d = {}
-  d['nVersion'] = vds.read_int32()
-  d['nTime'] = vds.read_uint32()
-  d['nServices'] = vds.read_uint64()
+  d['nVersion']    = vds.read_int32()
+  d['nTime']       = vds.read_uint32()
+  d['nServices']   = vds.read_uint64()
   d['pchReserved'] = vds.read_bytes(12)
-  d['ip'] = socket.inet_ntoa(vds.read_bytes(4))
-  d['port'] = socket.htons(vds.read_uint16())
+  d['ip']          = socket.inet_ntoa(vds.read_bytes(4))
+  d['port']        = socket.htons(vds.read_uint16())
   return d
 
 def deserialize_CAddress(d):
-  return d['ip']+":"+str(d['port'])+" (lastseen: %s)"%(time.ctime(d['nTime']),)
+  return d['ip'] + ":" + str(d['port']) + " (lastseen: %s)" % (time.ctime(d['nTime']),)
+
 
 def parse_setting(setting, vds):
   if setting[0] == "f":  # flag (boolean) settings
@@ -38,41 +39,53 @@ def parse_setting(setting, vds):
     return vds.read_int32()
   return 'unknown setting'
 
+
+# Naming Conventions:  $TxIn -> Transaction Input.
 def parse_TxIn(vds):
   """Parse a Transaction Input in the human-readable format and store its contents in a python dict{k:v}.
   Naming Conventions:  $TxIn -> Transaction Input."""
   d = {}
   d['prevout_hash'] = vds.read_bytes(32)
-  d['prevout_n'] = vds.read_uint32()
-  d['scriptSig'] = vds.read_bytes(vds.read_compact_size())
-  d['sequence'] = vds.read_uint32()
+  d['prevout_n']    = vds.read_uint32()
+  d['scriptSig']    = vds.read_bytes(vds.read_compact_size())
+  d['sequence']     = vds.read_uint32()
   return d
 
+
 def deserialize_TxIn(d, transaction_index=None, owner_keys=None):
+  """Convert a Transaction Input (that is already parsed through parse_TxIn()) into a presentable form suitable for viewing/printing
+  on STDIN."""
   if d['prevout_hash'] == "\x00"*32:
-    result = "TxIn: COIN GENERATED"
+    result =  "TxIn: COIN GENERATED"
     result += " coinbase:"+d['scriptSig'].encode('hex_codec')
   elif transaction_index is not None and d['prevout_hash'] in transaction_index:
-    p = transaction_index[d['prevout_hash']]['txOut'][d['prevout_n']]
-    result = "TxIn: value: %f"%(p['value']/1.0e8,)
+    p      =  transaction_index[d['prevout_hash']]['txOut'][d['prevout_n']]
+    result =  "TxIn: value: %f"%(p['value']/1.0e8,)
     result += " prev("+long_hex(d['prevout_hash'][::-1])+":"+str(d['prevout_n'])+")"
   else:
-    result = "TxIn: prev("+long_hex(d['prevout_hash'][::-1])+":"+str(d['prevout_n'])+")"
-    pk = extract_public_key(d['scriptSig'])
+    result =  "TxIn: prev("+long_hex(d['prevout_hash'][::-1])+":"+str(d['prevout_n'])+")"
+    pk     =  extract_public_key(d['scriptSig'])
     result += " pubkey: "+pk
     result += " sig: "+decode_script(d['scriptSig'])
-  if d['sequence'] < 0xffffffff: result += " sequence: "+hex(d['sequence'])
+  if d['sequence'] < 0xffffffff: result += " sequence:
+    "+hex(d['sequence'])
   return result
 
+
+# Naming Conventions:  $TxOut -> Transaction Output.
 def parse_TxOut(vds):
+  """Parse a Transaction Output in the human-readable format and store its contents in a python dict{k:v}."""
   d = {}
   d['value'] = vds.read_int64()
   d['scriptPubKey'] = vds.read_bytes(vds.read_compact_size())
   return d
 
+
 def deserialize_TxOut(d, owner_keys=None):
+  """Convert a Transaction Output (that is already parsed through parse_TxOut()) into a presentable form suitable for viewing/printing
+  on STDIN."""
   result =  "TxOut: value: %f"%(d['value']/1.0e8,)
-  pk = extract_public_key(d['scriptPubKey'])
+  pk     =  extract_public_key(d['scriptPubKey'])
   result += " pubkey: "+pk
   result += " Script: "+decode_script(d['scriptPubKey'])
   if owner_keys is not None:
@@ -80,25 +93,35 @@ def deserialize_TxOut(d, owner_keys=None):
     else: result += " Own: False"
   return result
 
+
 def parse_Transaction(vds, has_nTime=False):
-  d = {}
+  """Parse a single Transaction, present inside of a Block, in the human-readable format and store its contents in a python dict{k:v}."""
   start_pos = vds.read_cursor
+  d = {}
   d['version'] = vds.read_int32()
   if has_nTime:
     d['nTime'] = vds.read_uint32()
-  n_vin = vds.read_compact_size()
-  d['txIn'] = []
+  
+  # extracting the Transaction Inputs
+  n_vin        = vds.read_compact_size()
+  d['txIn']    = []
   for i in xrange(n_vin):
     d['txIn'].append(parse_TxIn(vds))
-  n_vout = vds.read_compact_size()
-  d['txOut'] = []
+  
+  # extracting the Transaction Outputs
+  n_vout       = vds.read_compact_size()
+  d['txOut']   = []
   for i in xrange(n_vout):
     d['txOut'].append(parse_TxOut(vds))
+  
   d['lockTime'] = vds.read_uint32()
   d['__data__'] = vds.input[start_pos:vds.read_cursor]
   return d
 
+
 def deserialize_Transaction(d, transaction_index=None, owner_keys=None, print_raw_tx=False):
+  """Convert a Transaction (that is already parsed through parse_Transaction()) into a presentable form suitable for viewing/printing
+  on STDIN."""
   result = "%d tx in, %d out\n"%(len(d['txIn']), len(d['txOut']))
   for txIn in d['txIn']:
     result += deserialize_TxIn(txIn, transaction_index) + "\n"
@@ -106,51 +129,65 @@ def deserialize_Transaction(d, transaction_index=None, owner_keys=None, print_ra
     result += deserialize_TxOut(txOut, owner_keys) + "\n"
   if print_raw_tx == True:
       result += "Transaction hex value: " + d['__data__'].encode('hex') + "\n"
-  
   return result
 
+
 def parse_MerkleTx(vds):
+  """Parse a MerkleTx, present inside of a Block, in the human-readable format and store its contents in a python dict{k:v}."""
   d = parse_Transaction(vds)
-  d['hashBlock'] = vds.read_bytes(32)
-  n_merkleBranch = vds.read_compact_size()
+  d['hashBlock']    = vds.read_bytes(32)
+  n_merkleBranch    = vds.read_compact_size()
   d['merkleBranch'] = vds.read_bytes(32*n_merkleBranch)
-  d['nIndex'] = vds.read_int32()
+  d['nIndex']       = vds.read_int32()
   return d
 
+
 def deserialize_MerkleTx(d, transaction_index=None, owner_keys=None):
+  """Convert a MerkleTx (that is already parsed through parse_MerkleTx()) into a presentable form suitable for viewing/printing
+  on STDIN."""
   tx = deserialize_Transaction(d, transaction_index, owner_keys)
   result = "block: "+(d['hashBlock'][::-1]).encode('hex_codec')
   result += " %d hashes in merkle branch\n"%(len(d['merkleBranch'])/32,)
   return result+tx
 
+
 def parse_WalletTx(vds):
+  """Parse a WalletTx in the human-readable format and store its contents in a python dict{k:v}."""
   d = parse_MerkleTx(vds)
-  n_vtxPrev = vds.read_compact_size()
+  
+  n_vtxPrev    = vds.read_compact_size()
   d['vtxPrev'] = []
   for i in xrange(n_vtxPrev):
     d['vtxPrev'].append(parse_MerkleTx(vds))
 
   d['mapValue'] = {}
-  n_mapValue = vds.read_compact_size()
+  n_mapValue    = vds.read_compact_size()
   for i in xrange(n_mapValue):
     key = vds.read_string()
     value = vds.read_string()
     d['mapValue'][key] = value
-  n_orderForm = vds.read_compact_size()
+  
+  n_orderForm    = vds.read_compact_size()
   d['orderForm'] = []
   for i in xrange(n_orderForm):
-    first = vds.read_string()
+    first  = vds.read_string()
     second = vds.read_string()
     d['orderForm'].append( (first, second) )
-  d['fTimeReceivedIsTxTime'] = vds.read_uint32()
-  d['timeReceived'] = vds.read_uint32()
+  
+  d['fTimeReceivedIsTxTime'] \
+              = vds.read_uint32()
+  d['timeReceived'] \
+              = vds.read_uint32()
   d['fromMe'] = vds.read_boolean()
-  d['spent'] = vds.read_boolean()
+  d['spent']  = vds.read_boolean()
 
   return d
 
+
 def deserialize_WalletTx(d, transaction_index=None, owner_keys=None):
-  result = deserialize_MerkleTx(d, transaction_index, owner_keys)
+  """Convert a WalletTx (that is already parsed through parse_WalletTx()) into a presentable form suitable for viewing/printing
+  on STDIN."""
+  result =  deserialize_MerkleTx(d, transaction_index, owner_keys)
   result += "%d vtxPrev txns\n"%(len(d['vtxPrev']),)
   result += "mapValue:"+str(d['mapValue'])
   if len(d['orderForm']) > 0:
@@ -158,6 +195,7 @@ def deserialize_WalletTx(d, transaction_index=None, owner_keys=None):
   result += "\n"+"timeReceived:"+time.ctime(d['timeReceived'])
   result += " fromMe:"+str(d['fromMe'])+" spent:"+str(d['spent'])
   return result
+
 
 # The CAuxPow (auxiliary proof of work) structure supports merged mining.
 # A flag in the block version field indicates the structure's presence.
@@ -167,23 +205,28 @@ def deserialize_WalletTx(d, transaction_index=None, owner_keys=None):
 def parse_AuxPow(vds):
   d = parse_MerkleTx(vds)
   n_chainMerkleBranch = vds.read_compact_size()
-  d['chainMerkleBranch'] = vds.read_bytes(32*n_chainMerkleBranch)
-  d['chainIndex'] = vds.read_int32()
-  d['parentBlock'] = parse_BlockHeader(vds)
+  d['chainMerkleBranch'] \
+                      = vds.read_bytes(32*n_chainMerkleBranch)
+  d['chainIndex']     = vds.read_int32()
+  d['parentBlock']    = parse_BlockHeader(vds)
   return d
+
 
 def parse_BlockHeader(vds):
   d = {}
-  header_start = vds.read_cursor
-  d['version'] = vds.read_int32()
+  header_start  = vds.read_cursor
+  d['version']  = vds.read_int32()
   d['hashPrev'] = vds.read_bytes(32)
-  d['hashMerkleRoot'] = vds.read_bytes(32)
-  d['nTime'] = vds.read_uint32()
-  d['nBits'] = vds.read_uint32()
-  d['nNonce'] = vds.read_uint32()
-  header_end = vds.read_cursor
-  d['__header__'] = vds.input[header_start:header_end]
+  d['hashMerkleRoot'] \
+                = vds.read_bytes(32)
+  d['nTime']    = vds.read_uint32()
+  d['nBits']    = vds.read_uint32()
+  d['nNonce']   = vds.read_uint32()
+  header_end    = vds.read_cursor
+  d['__header__'] \
+                = vds.input[header_start:header_end]
   return d
+
 
 def parse_Block(vds):
   d = parse_BlockHeader(vds)
@@ -197,14 +240,16 @@ def parse_Block(vds):
   return d
   
 def deserialize_Block(d, print_raw_tx=False):
-  result = "Time: "+time.ctime(d['nTime'])+" Nonce: "+str(d['nNonce'])
-  result += "\nnBits: 0x"+hex(d['nBits'])
-  result += "\nhashMerkleRoot: 0x"+d['hashMerkleRoot'][::-1].encode('hex_codec')
-  result += "\nPrevious block: "+d['hashPrev'][::-1].encode('hex_codec')
-  result += "\n%d transactions:\n"%len(d['transactions'])
+  """Convert a Block (that is already parsed through parse_Block()) into a presentable form suitable for viewing/printing
+  on STDIN."""
+  result   =  "Time: "+time.ctime(d['nTime'])+" Nonce: "+str(d['nNonce'])
+  result   += "\nnBits: 0x"+hex(d['nBits'])
+  result   += "\nhashMerkleRoot: 0x"+d['hashMerkleRoot'][::-1].encode('hex_codec')
+  result   += "\nPrevious block: "+d['hashPrev'][::-1].encode('hex_codec')
+  result   += "\n%d transactions:\n"%len(d['transactions'])
   for t in d['transactions']:
     result += deserialize_Transaction(t, print_raw_tx=print_raw_tx)+"\n"
-  result += "\nRaw block header: "+d['__header__'].encode('hex_codec')
+  result   += "\nRaw block header: "+d['__header__'].encode('hex_codec')
   return result
 
 def parse_BlockLocator(vds):
